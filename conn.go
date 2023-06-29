@@ -43,8 +43,8 @@ func (my *myConn) ExecContext(ctx context.Context, query string, args []driver.N
 	if execerCtx, ok := my.Conn.(driver.ExecerContext); ok {
 		ctx = my.hook.Before(ctx, MethodExec, query, args)
 		result, err := execerCtx.ExecContext(ctx, query, args)
-		my.hook.After(ctx, MethodExec, query, args, result, err)
-		return result, err
+		hookResult, hookErr := my.hook.After(ctx, MethodExec, query, args, result, err)
+		return execReturn(result, hookResult, hookErr)
 	}
 
 	dargs, err := namedValueToValue(args)
@@ -57,6 +57,16 @@ func (my *myConn) ExecContext(ctx context.Context, query string, args []driver.N
 		return nil, ctx.Err()
 	}
 	return my.Exec(query, dargs)
+}
+
+func execReturn(result driver.Result, hookResult any, hookErr error) (driver.Result, error) {
+	if hookErr != nil {
+		return result, hookErr
+	}
+	if hResult, ok := hookResult.(driver.Result); ok {
+		return hResult, nil
+	}
+	return result, nil
 }
 
 // namedValueToValue copy from database/sql/ctxutil.go
@@ -79,8 +89,8 @@ func (my *myConn) Exec(query string, args []driver.Value) (driver.Result, error)
 		ctx := context.Background()
 		ctx = my.hook.Before(ctx, MethodExec, query, args)
 		result, err := execer.Exec(query, args)
-		my.hook.After(ctx, MethodExec, query, args, result, err)
-		return result, err
+		hookResult, hookErr := my.hook.After(ctx, MethodExec, query, args, result, err)
+		return execReturn(result, hookResult, hookErr)
 	}
 	return nil, driver.ErrSkip
 }
@@ -113,8 +123,8 @@ func (my *myConn) QueryContext(ctx context.Context, query string, args []driver.
 	if queryerCtx, ok := my.Conn.(driver.QueryerContext); ok {
 		ctx = my.hook.Before(ctx, MethodQuery, query, args)
 		rows, err := queryerCtx.QueryContext(ctx, query, args)
-		my.hook.After(ctx, MethodQuery, query, args, rows, err)
-		return rows, err
+		hookResult, hookErr := my.hook.After(ctx, MethodQuery, query, args, rows, err)
+		return queryReturn(rows, hookResult, hookErr)
 	}
 
 	dargs, err := namedValueToValue(args)
@@ -130,6 +140,16 @@ func (my *myConn) QueryContext(ctx context.Context, query string, args []driver.
 	return my.Query(query, dargs)
 }
 
+func queryReturn(rows driver.Rows, hookResult any, hookErr error) (driver.Rows, error) {
+	if hookErr != nil {
+		return rows, hookErr
+	}
+	if hookRows, ok := hookResult.(driver.Rows); ok {
+		return hookRows, nil
+	}
+	return rows, nil
+}
+
 // Query implemnts the driver.Queryer interface.
 // 如果驱动实现了 driver.Queryer 则直接通过 Query 查询，并在查询前后调用 hook 方法。
 // 否则返回 driver.ErrSkip, 以便转到 PrepareContext 预编译流程。
@@ -138,8 +158,8 @@ func (my *myConn) Query(query string, args []driver.Value) (driver.Rows, error) 
 		ctx := context.Background()
 		ctx = my.hook.Before(ctx, MethodQuery, query, args)
 		rows, err := queryer.Query(query, args)
-		my.hook.After(ctx, MethodQuery, query, args, rows, err)
-		return rows, err
+		hookResult, hookErr := my.hook.After(ctx, MethodQuery, query, args, rows, err)
+		return queryReturn(rows, hookResult, hookErr)
 	}
 	return nil, driver.ErrSkip
 }
@@ -153,20 +173,24 @@ func (my *myConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx
 	if ciCtx, ok := my.Conn.(driver.ConnBeginTx); ok {
 		ctx = my.hook.Before(ctx, MethodBegin, string(MethodBegin), opts)
 		tx, err := ciCtx.BeginTx(ctx, opts)
-		my.hook.After(ctx, MethodBegin, string(MethodBegin), opts, tx, err)
+		hookResult, hookErr := my.hook.After(ctx, MethodBegin, string(MethodBegin), opts, tx, err)
+		tx, err = txReturn(tx, hookResult, hookErr)
 		return &myTx{tx: tx, hook: my.hook, ctx: ctx}, err
 	}
 
 	if ctx.Done() == nil {
 		ctx = my.hook.Before(ctx, MethodBegin, string(MethodBegin), nil)
 		tx, err := my.Conn.Begin() // nolint
-		my.hook.After(ctx, MethodBegin, string(MethodBegin), nil, tx, err)
+		hookResult, hookErr := my.hook.After(ctx, MethodBegin, string(MethodBegin), nil, tx, err)
+		tx, err = txReturn(tx, hookResult, hookErr)
 		return &myTx{tx: tx, hook: my.hook, ctx: ctx}, err
 	}
 
 	ctx = my.hook.Before(ctx, MethodBegin, string(MethodBegin), nil)
 	tx, err := my.Conn.Begin() // nolint
-	my.hook.After(ctx, MethodBegin, string(MethodBegin), nil, tx, err)
+	hookResult, hookErr := my.hook.After(ctx, MethodBegin, string(MethodBegin), nil, tx, err)
+	tx, err = txReturn(tx, hookResult, hookErr)
+	tx = &myTx{tx: tx, hook: my.hook, ctx: ctx}
 	if err == nil {
 		select {
 		default:
@@ -175,5 +199,15 @@ func (my *myConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx
 			return nil, ctx.Err()
 		}
 	}
-	return &myTx{tx: tx, hook: my.hook, ctx: ctx}, err
+	return tx, err
+}
+
+func txReturn(tx driver.Tx, hookResult any, hookErr error) (driver.Tx, error) {
+	if hookErr != nil {
+		return tx, hookErr
+	}
+	if hookTx, ok := hookResult.(driver.Tx); ok {
+		tx = hookTx
+	}
+	return tx, nil
 }

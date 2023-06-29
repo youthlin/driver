@@ -18,7 +18,7 @@ const (
 // Hook
 type Hook interface {
 	Before(ctx context.Context, method Method, query string, args any) context.Context
-	After(ctx context.Context, method Method, query string, args any, result any, err error)
+	After(ctx context.Context, method Method, query string, args any, result any, err error) (hookResult any, hookErr error)
 }
 
 func NewHook(before BeforeFn, after AfterFn) Hook {
@@ -26,7 +26,7 @@ func NewHook(before BeforeFn, after AfterFn) Hook {
 }
 
 type BeforeFn func(ctx context.Context, method Method, query string, args any) context.Context
-type AfterFn func(ctx context.Context, method Method, query string, args any, result any, err error)
+type AfterFn func(ctx context.Context, method Method, query string, args any, result any, err error) (hookResult any, hookErr error)
 
 type h struct {
 	BeforeFn
@@ -40,10 +40,11 @@ func (h h) Before(ctx context.Context, method Method, query string, args any) co
 	return ctx
 }
 
-func (h h) After(ctx context.Context, method Method, query string, args any, result any, err error) {
+func (h h) After(ctx context.Context, method Method, query string, args any, result any, err error) (hookResult any, hookErr error) {
 	if h.AfterFn != nil {
-		h.AfterFn(ctx, method, query, args, result, err)
+		return h.AfterFn(ctx, method, query, args, result, err)
 	}
+	return result, err
 }
 
 func safeHook(hook Hook) Hook {
@@ -73,15 +74,17 @@ func Cost(ctx context.Context) time.Duration {
 
 func (my *myHook) Before(ctx context.Context, method Method, query string, args any) context.Context {
 	safeFn(func() {
-		if got := my.hook.Before(context.WithValue(ctx, &startAt, time.Now().UnixNano()), method, query, args); got != nil {
+		ctx = context.WithValue(ctx, &startAt, time.Now().UnixNano())
+		if got := my.hook.Before(ctx, method, query, args); got != nil {
 			ctx = got
 		}
 	})
 	return ctx
 }
 
-func (my *myHook) After(ctx context.Context, method Method, query string, args any, result any, err error) {
+func (my *myHook) After(ctx context.Context, method Method, query string, args any, result any, err error) (hookResult any, hookErr error) {
 	safeFn(func() {
-		my.hook.After(ctx, method, query, args, result, err)
+		result, err = my.hook.After(ctx, method, query, args, result, err)
 	})
+	return result, err
 }

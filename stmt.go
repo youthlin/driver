@@ -20,8 +20,8 @@ func (my *myStmt) Exec(args []driver.Value) (driver.Result, error) {
 	// nolint
 	// SA1019: my.Stmt.Exec has been deprecated since Go 1.8: Drivers should implement StmtExecContext instead (or additionally). (staticcheck)
 	result, err := my.Stmt.Exec(args)
-	my.hook.After(my.ctx, MethodExec, my.query, args, result, err)
-	return result, err
+	hookResult, hookErr := my.hook.After(my.ctx, MethodExec, my.query, args, result, err)
+	return execReturn(result, hookResult, hookErr)
 }
 
 // Query implements the driver.Stmt interface.
@@ -29,8 +29,8 @@ func (my *myStmt) Exec(args []driver.Value) (driver.Result, error) {
 func (my *myStmt) Query(args []driver.Value) (driver.Rows, error) {
 	my.ctx = my.hook.Before(my.ctx, MethodQuery, my.query, args)
 	rows, err := my.Stmt.Query(args) // nolint
-	my.hook.After(my.ctx, MethodQuery, my.query, args, rows, err)
-	return rows, err
+	hookResult, hookErr := my.hook.After(my.ctx, MethodQuery, my.query, args, rows, err)
+	return queryReturn(rows, hookResult, hookErr)
 }
 
 var _ driver.Stmt = (*myStmt)(nil)
@@ -43,8 +43,8 @@ func (my *myStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (dr
 	if siCtx, ok := my.Stmt.(driver.StmtExecContext); ok {
 		ctx = my.hook.Before(ctx, MethodExec, my.query, args)
 		result, err := siCtx.ExecContext(ctx, args)
-		my.hook.After(ctx, MethodExec, my.query, args, result, err)
-		return result, err
+		hookResult, hookErr := my.hook.After(ctx, MethodExec, my.query, args, result, err)
+		return execReturn(result, hookResult, hookErr)
 	}
 
 	dargs, err := namedValueToValue(args)
@@ -69,8 +69,8 @@ func (my *myStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (d
 	if siCtx, ok := my.Stmt.(driver.StmtQueryContext); ok {
 		ctx = my.hook.Before(ctx, MethodQuery, my.query, args)
 		rows, err := siCtx.QueryContext(ctx, args)
-		my.hook.After(ctx, MethodQuery, my.query, args, rows, err)
-		return rows, err
+		hookResult, hookErr := my.hook.After(ctx, MethodQuery, my.query, args, rows, err)
+		return queryReturn(rows, hookResult, hookErr)
 	}
 
 	dargs, err := namedValueToValue(args)
