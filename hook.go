@@ -17,7 +17,7 @@ const (
 
 // Hook
 type Hook interface {
-	Before(ctx context.Context, method Method, query string, args any)
+	Before(ctx context.Context, method Method, query string, args any) context.Context
 	After(ctx context.Context, method Method, query string, args any, result any, err error)
 }
 
@@ -25,7 +25,7 @@ func NewHook(before BeforeFn, after AfterFn) Hook {
 	return h{BeforeFn: before, AfterFn: after}
 }
 
-type BeforeFn func(ctx context.Context, method Method, query string, args any)
+type BeforeFn func(ctx context.Context, method Method, query string, args any) context.Context
 type AfterFn func(ctx context.Context, method Method, query string, args any, result any, err error)
 
 type h struct {
@@ -33,10 +33,11 @@ type h struct {
 	AfterFn
 }
 
-func (h h) Before(ctx context.Context, method Method, query string, args any) {
+func (h h) Before(ctx context.Context, method Method, query string, args any) context.Context {
 	if h.BeforeFn != nil {
-		h.BeforeFn(ctx, method, query, args)
+		ctx = h.BeforeFn(ctx, method, query, args)
 	}
+	return ctx
 }
 
 func (h h) After(ctx context.Context, method Method, query string, args any, result any, err error) {
@@ -70,10 +71,13 @@ func Cost(ctx context.Context) time.Duration {
 	return 0
 }
 
-func (my *myHook) Before(ctx context.Context, method Method, query string, args any) {
+func (my *myHook) Before(ctx context.Context, method Method, query string, args any) context.Context {
 	safeFn(func() {
-		my.hook.Before(context.WithValue(ctx, &startAt, time.Now().UnixNano()), method, query, args)
+		if got := my.hook.Before(context.WithValue(ctx, &startAt, time.Now().UnixNano()), method, query, args); got != nil {
+			ctx = got
+		}
 	})
+	return ctx
 }
 
 func (my *myHook) After(ctx context.Context, method Method, query string, args any, result any, err error) {

@@ -18,7 +18,9 @@ import (
 // ...
 
 sql.Register("test", driver.Wrap(&sqlite3.SQLiteDriver{}, driver.NewHook(
-	/*before*/ func(ctx context.Context, method driver.Method, query string, args any) {},
+	/*before*/ func(ctx context.Context, method driver.Method, query string, args any) context.Context {
+        return ctx
+    },
 	/*after*/  func(ctx context.Context, method driver.Method, query string, args, result any, err error) {
 		log.Printf("cost=%v, method=%v, query=%v, args=%+v, resutl=%v, err=%+v\n",
 			driver.Cost(ctx), method, query, args, result, err)

@@ -24,8 +24,15 @@
 package driver
 
 import (
+	"database/sql"
 	"database/sql/driver"
 )
+
+// Register register a driver with the given driverName and add a hook to it.
+// 使用给定的驱动名称注册一个数据库驱动，并在其上添加 hook 方法。
+func Register(driverName string, driver driver.Driver, hook Hook) {
+	sql.Register(driverName, Wrap(driver, hook))
+}
 
 // Wrap return a wrapped Driver.
 // 返回包装后的 Driver.
